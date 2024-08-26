@@ -12,18 +12,16 @@ import {
 import React, { useRef, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import EventSource from 'react-native-sse';
-import { generateUniqueRandomId, formatDateTime } from '../utils/Helper';
-import { useNavigation } from '@react-navigation/native';
-import ListEmptyComponent from '../components/ListEmptyComponent';
-import ChatMessages, { Message } from '../components/ChatMessages';
+import { generateUniqueRandomId, formatDateTime } from './utils/Helper';
+import ListEmptyComponent from './components/ListEmptyComponent';
+import ChatMessages, { Message } from './components/ChatMessages';
 
 const Chat = () => {
-    const listRef = useRef < FlatList > (null);
-
-    const navigation = useNavigation();
+    const listRef = useRef(null);
 
     const [userContent, setUserContent] = useState('');
-    const [msgs, setMsgs] = useState < Message[] > ([]);
+    const [msgs, setMsgs] = useState([]);
+    //const [msgs, setMsgs] = useState < Message[] > ([]);
 
     const scrollPage = () => {
         listRef?.current?.scrollToEnd();
@@ -33,7 +31,6 @@ const Chat = () => {
         const userMsg = userContent;
         setUserContent('');
         try {
-            // console.log('Starting fetching');
             const userId = generateUniqueRandomId();
             const systemId = generateUniqueRandomId();
             setMsgs(pre => [
@@ -53,84 +50,81 @@ const Chat = () => {
                 },
             ]);
             scrollPage();
-            let url = 'http://localhost:11434/v1';
+
+            let url = 'http://10.0.2.2:5000/ai_pdf';
             let text = '';
-            let messages = [
-                { role: 'system', content: 'You are a helpful assistant.' },
-                { role: 'user', content: userMsg },
-            ];
-            let temperature = 0.7;
-            const es = new EventSource(url + '/chat/completions', {
+            const es = new EventSource(url, {
                 headers: {
                     'Content-Type': 'application/json',
-                    // Authorization: `Bearer ${OpenAIToken}`,
                 },
                 method: 'POST',
-                // Remember to read the OpenAI API documentation to set the correct body
                 body: JSON.stringify({
-                    model: 'llama3',
-                    messages: messages,
-                    max_tokens: 600,
-                    n: 1,
-                    temperature: temperature,
-                    stream: true,
+                    prompt: userMsg,
                 }),
-                pollingInterval: 0, // Remember to set pollingInterval to 0 to disable reconnections
+                lineEndingCharacter: '\n',
             });
 
             es.addEventListener('open', () => {
-                // console.log('Connection opened');
-                scrollPage();
                 text = '';
-            });
-            es.addEventListener('message', (event: any) => {
                 scrollPage();
-                // console.log('Message received:', event.data);
-                if (event.data !== '[DONE]') {
+            });
+
+            es.addEventListener('message', (event) => {
+                scrollPage();
+                if (event.data === '[DONE]') {
+                    es.removeAllEventListeners();
+                    es.close();
+                    return;
+                }
+
+                try {
+                    console.log('Checking log 1 -> ', event.data);
                     const data = JSON.parse(event.data);
-                    if (data.choices[0].finish_reason === 'stop') {
-                        // text;wh
+                    console.log('Checking log 2 -> ', data);
+                    if (data && data.content) {
+                        console.log('Checking log 3 -> ', data.content);
+                        text += data.content;
                         setMsgs(pre =>
                             pre.map(message =>
                                 message.id === systemId ? { ...message, text: text } : message,
                             ),
                         );
-                        // console.log('Connection closing. Reason: Empty response.', text);
-                        es.removeAllEventListeners();
-                        es.close();
                         scrollPage();
                     } else {
-                        if (data.choices[0].delta.content !== undefined) {
-                            const delta = data.choices[0].delta.content;
-                            text += delta;
-                            scrollPage();
-                            setMsgs(pre =>
-                                pre.map(message =>
-                                    message.id === systemId ? { ...message, text: text } : message,
-                                ),
-                            );
-                        }
+                        console.warn('Delta or content is undefined:', data);
                     }
-                } else {
-                    es.removeAllEventListeners();
-                    es.close();
-                    scrollPage();
-                    // console.log('Connection closing.', text);
+
+                    // if (data.choices && data.choices.length > 0) {
+                    //     const delta = data.choices[0].delta;
+                    //     // Check if 'delta' and 'content' exist
+
+                    // } else {
+                    //     console.warn('Choices array is empty or undefined:', data.choices);
+                    // }
+                } catch (e) {
+                    console.error('Error parsing message:', e);
                 }
             });
-            // console.log(text);
+
+            es.addEventListener('error', (error) => {
+                console.error('Error in EventSource:', error);
+                es.close();
+            });
+
         } catch (error) {
-            // console.log(error);
+            console.error('Error in fetchStream:', error);
         }
     };
+
 
     return (
         <SafeAreaView style={styles.container}>
             <KeyboardAvoidingView
                 style={styles.container}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+                // keyboardVerticalOffset={Platform.OS === 'android' ? 57 : 0}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
                 <View style={styles.container}>
-                    <Text style={styles.title}>Chat</Text>
+                    <Text style={styles.title}>Ortho ChatBot</Text>
                     <FlatList
                         data={msgs}
                         contentContainerStyle={styles.listContainer}
@@ -167,9 +161,9 @@ const Chat = () => {
                         </TouchableOpacity>
                     </View>
                 </View>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                     onPress={() => {
-                        navigation.goBack();
+                        // navigation.goBack();
                     }}
                     style={styles.backIconBtn}>
                     <Image
@@ -179,7 +173,7 @@ const Chat = () => {
                         style={styles.backIcon}
                         tintColor={'purple'}
                     />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
             </KeyboardAvoidingView>
         </SafeAreaView>
     );
@@ -190,7 +184,7 @@ export default Chat;
 const styles = StyleSheet.create({
     container: { flex: 1 },
     title: {
-        fontSize: 16,
+        fontSize: 23,
         color: 'purple',
         textAlign: 'center',
         textTransform: 'uppercase',
@@ -200,6 +194,7 @@ const styles = StyleSheet.create({
     bottomContainer: {
         flexDirection: 'row',
         marginHorizontal: 20,
+        marginVertical: 10
     },
     chatInput: {
         height: 50,
@@ -208,10 +203,12 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         paddingHorizontal: 20,
         marginHorizontal: 10,
+        borderWidth: 1,
+        borderColor: 'purple'
     },
-    sendIcon: { width: 20, height: 20, alignSelf: 'center', tintColor: 'purple' },
+    sendIcon: { width: 20, height: 20, alignSelf: 'center', tintColor: 'white' },
     sendBtn: {
-        backgroundColor: 'white',
+        backgroundColor: 'purple',
         borderRadius: 25,
         padding: 15,
         alignItems: 'center',
